@@ -898,6 +898,23 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+// Parse a fetch response as JSON without throwing on non-JSON bodies.
+// Infrastructure-level errors (e.g. Vercel's plain-text 413 "Request Entity
+// Too Large") never reach our API code, so response.json() would throw a
+// confusing "Unexpected token" error instead of the real status. Returns
+// null when the body is not JSON; callers fall back to the HTTP status.
+async function parseJsonBody(response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function add(a, b) {
   return [a[0] + b[0], a[1] + b[1]];
 }
@@ -2372,11 +2389,7 @@ async function resetParametersToDefaults() {
   try {
     let defaults = state.nativeDefaults;
     try {
-      const response = await fetch("/api/defaults");
-      if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
-      }
-      defaults = await response.json();
+      defaults = await Backend.call("/api/defaults");
       state.nativeDefaults = defaults;
     } catch (error) {
       if (!defaults) {
@@ -2531,24 +2544,16 @@ async function renderReferenceStage(
       scoreColorSpace,
     )
     : rasterRegionColors(scoreColorSpace);
-  const response = await fetch("/api/render-reference", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      width: state.discrete.width,
-      height: state.discrete.height,
-      labels_base64: bytesToBase64(labelsBytes),
-      rgb_base64: bytesToBase64(state.discrete.rgb),
-      region_count: state.discrete.report.final_regions,
-      region_linear_rgb: colors,
-      chains: referenceChains(controlSets),
-      options: collectRasterOptions(fixedInitialLength),
-    }),
+  const result = await Backend.call("/api/render-reference", {
+    width: state.discrete.width,
+    height: state.discrete.height,
+    labels_base64: bytesToBase64(labelsBytes),
+    rgb_base64: bytesToBase64(state.discrete.rgb),
+    region_count: state.discrete.report.final_regions,
+    region_linear_rgb: colors,
+    chains: referenceChains(controlSets),
+    options: collectRasterOptions(fixedInitialLength),
   });
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.error || `Request failed (${response.status})`);
-  }
   return {
     ...result,
     canvas: rgbCanvasFromBase64(result.rgb_base64, result.width, result.height),
@@ -2590,15 +2595,7 @@ async function refreshFlatSvgPreview() {
     clearFlatSvgPreview();
     return null;
   }
-  const response = await fetch("/api/export-flat-svg", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildFlatSvgPayload(state.optimized)),
-  });
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.error || `Request failed (${response.status})`);
-  }
+  const result = await Backend.call("/api/export-flat-svg", buildFlatSvgPayload(state.optimized));
   const loaded = await loadFlatSvgPreviewImage(result.svg);
   clearFlatSvgPreview();
   state.svgPreview = {
@@ -2667,24 +2664,16 @@ async function optimizeRasterStage(controlSets, fixedInitialLength) {
     state.discrete.labels.byteLength,
   );
   const colorSpace = $("raster-refine-color-space").value;
-  const response = await fetch("/api/optimize-raster", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      width: state.discrete.width,
-      height: state.discrete.height,
-      labels_base64: bytesToBase64(labelsBytes),
-      rgb_base64: bytesToBase64(state.discrete.rgb),
-      region_count: state.discrete.report.final_regions,
-      region_linear_rgb: rasterRegionColors(colorSpace),
-      chains: rasterChains(controlSets, true),
-      options: collectRasterOptimizeOptions(fixedInitialLength),
-    }),
+  const result = await Backend.call("/api/optimize-raster", {
+    width: state.discrete.width,
+    height: state.discrete.height,
+    labels_base64: bytesToBase64(labelsBytes),
+    rgb_base64: bytesToBase64(state.discrete.rgb),
+    region_count: state.discrete.report.final_regions,
+    region_linear_rgb: rasterRegionColors(colorSpace),
+    chains: rasterChains(controlSets, true),
+    options: collectRasterOptimizeOptions(fixedInitialLength),
   });
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.error || `Request failed (${response.status})`);
-  }
   const scaleX = state.discrete.sourceWidth / state.discrete.width;
   const scaleY = state.discrete.sourceHeight / state.discrete.height;
   return {
@@ -2783,15 +2772,10 @@ async function optimize() {
     const runRasterRefinement = rasterMode && $("raster-refine-enabled").checked;
     const initialControls = state.problem.chains.map((chain) => chain.control_points);
     const fixedInitialLength = rasterMode ? rasterNetworkLength(initialControls) : 0;
-    const response = await fetch("/api/optimize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chains: state.problem.chains, options: collectOptions() }),
+    const result = await Backend.call("/api/optimize", {
+      chains: state.problem.chains,
+      options: collectOptions(),
     });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.error || `Request failed (${response.status})`);
-    }
     state.report = result.report;
     let optimizedControls = result.chains.map((chain) => chain.control_points);
     let rasterResult = null;
@@ -3575,15 +3559,7 @@ async function preprocessRaster() {
   $("preprocess-summary").textContent = "Preparing full-resolution raster and connected components…";
   try {
     const prepared = preprocessRasterPayload();
-    const response = await fetch("/api/preprocess", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(prepared.payload),
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.error || `Request failed (${response.status})`);
-    }
+    const result = await Backend.call("/api/preprocess", prepared.payload);
     const labels = uint32FromBase64(result.labels_base64, result.width * result.height);
     state.problem = null;
     state.baseline = null;
@@ -3703,27 +3679,19 @@ async function fitDiscreteBoundaries() {
       state.discrete.labels.byteOffset,
       state.discrete.labels.byteLength,
     );
-    const response = await fetch("/api/fit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        width: state.discrete.width,
-        height: state.discrete.height,
-        labels_base64: bytesToBase64(labelsBytes),
-        rgb_base64: bytesToBase64(state.discrete.rgb),
-        region_count: state.discrete.report.final_regions,
-        region_linear_rgb: meanLinearRgb(
-          state.discrete.rgb,
-          state.discrete.labels,
-          state.discrete.report.final_regions,
-        ),
-        options: collectFitterOptions(),
-      }),
+    const result = await Backend.call("/api/fit", {
+      width: state.discrete.width,
+      height: state.discrete.height,
+      labels_base64: bytesToBase64(labelsBytes),
+      rgb_base64: bytesToBase64(state.discrete.rgb),
+      region_count: state.discrete.report.final_regions,
+      region_linear_rgb: meanLinearRgb(
+        state.discrete.rgb,
+        state.discrete.labels,
+        state.discrete.report.final_regions,
+      ),
+      options: collectFitterOptions(),
     });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result.error || `Request failed (${response.status})`);
-    }
     if (!Array.isArray(result.chains) || result.chains.length === 0) {
       throw new Error("the segmentation has no internal region interfaces to fit");
     }
@@ -4124,20 +4092,18 @@ async function bootstrap() {
   installParameterHelp();
   setPreset("wave");
   try {
-    const [healthResponse, defaultsResponse] = await Promise.all([
-      fetch("/api/health"),
-      fetch("/api/defaults"),
+    // Initialize the backend (WASM preferred, server fallback).
+    await Backend.init();
+    const [health, defaults] = await Promise.all([
+      Backend.call("/api/health"),
+      Backend.call("/api/defaults"),
     ]);
-    if (!healthResponse.ok || !defaultsResponse.ok) {
-      throw new Error("native bridge did not answer");
-    }
-    const health = await healthResponse.json();
-    const defaults = await defaultsResponse.json();
     state.nativeDefaults = defaults;
     applyNativeDefaultsPayload(defaults);
     $("native-state").dataset.state = "ready";
-    $("native-state-text").textContent = `${health.backend} · ${health.library}`;
-    logRun("Native C API connected.");
+    const backendLabel = Backend.describe() === "wasm" ? "WASM" : "server";
+    $("native-state-text").textContent = `${health.backend} · ${health.library} (${backendLabel})`;
+    logRun(`Native C API connected via ${backendLabel} backend.`);
   } catch (error) {
     $("native-state").dataset.state = "error";
     $("native-state-text").textContent = "Native core unavailable";
