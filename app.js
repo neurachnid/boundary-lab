@@ -141,6 +141,22 @@ const parameterHelp = Object.freeze({
     performance: "Constant work per changed edge; the resulting merge order can change downstream complexity.",
     note: "Only applies to Area. Inspect Flat regions for lost small features before fitting.",
   },
+  "preprocess-downsample": {
+    what: "Allow downsampling rasters that exceed the megapixel limit.",
+    how: "When checked, oversized images are scaled down to fit the limit using high-quality canvas resampling. When unchecked, oversized images are rejected with an error.",
+    up: "Checked lets large images through; the topology is computed on the downsampled raster and may differ from full resolution.",
+    down: "Unchecked preserves the never-silently-downsample guarantee; use the native API for full-resolution large images.",
+    performance: "Downsampling is a one-time canvas operation; smaller rasters are faster downstream.",
+    note: "Explicit consent only — the UI never downsamples silently. A warning is shown when downsampling occurs.",
+  },
+  "preprocess-max-mp": {
+    what: "Maximum raster size in megapixels before the limit applies.",
+    how: "Images larger than this are either downsampled (if allowed) or rejected. Lower this for constrained backends (e.g. serverless payload limits).",
+    up: "Higher values allow larger rasters; watch backend request-size limits.",
+    down: "Lower values (e.g. 1.0) keep payloads small for serverless deployments.",
+    performance: "Smaller limits mean smaller payloads and faster transfers.",
+    note: "Default 4.0 matches the diagnostic limit; use 1.0 or lower on Vercel.",
+  },
   "preprocess-saliency": {
     what: "Unavailable in this browser lab: changing this weight has no effect.",
     how: "The native merger can penalize protected boundaries, but the browser RGB input provides no protection map.",
@@ -3412,12 +3428,28 @@ function makeFlatRegionCanvas(rgb, labels, regionCount, width, height) {
 function preprocessRasterPayload() {
   const sourceWidth = state.overlayImage.naturalWidth;
   const sourceHeight = state.overlayImage.naturalHeight;
-  const width = sourceWidth;
-  const height = sourceHeight;
-  if (width * height > MAX_DIAGNOSTIC_RASTER_PIXELS) {
-    throw new Error(
-      "Full-resolution raster exceeds the 4,000,000-pixel diagnostic limit; " +
-      "use the in-process native API rather than downsampling discrete topology.",
+  const maxMp = Math.max(0.1, numericValue("preprocess-max-mp", true) || 4);
+  const maxPixels = Math.floor(maxMp * 1000000);
+  const allowDownsample = $("preprocess-downsample").checked;
+  let width = sourceWidth;
+  let height = sourceHeight;
+  let downsampled = false;
+  if (width * height > maxPixels) {
+    if (!allowDownsample) {
+      throw new Error(
+        "Full-resolution raster exceeds the " + maxMp.toFixed(1) + "-megapixel limit; " +
+        "enable 'Downsample if over limit' or use the in-process native API rather than downsampling discrete topology.",
+      );
+    }
+    // Explicit user-consented downsample (not silent: the checkbox is visible
+    // and we flag the output). Scale to fit within the pixel budget.
+    const scale = Math.sqrt(maxPixels / (width * height));
+    width = Math.max(1, Math.floor(width * scale));
+    height = Math.max(1, Math.floor(height * scale));
+    downsampled = true;
+    console.warn(
+      "Downsampled raster from " + sourceWidth + "x" + sourceHeight +
+      " to " + width + "x" + height + "; discrete topology may differ.",
     );
   }
   const raster = document.createElement("canvas");
@@ -3431,7 +3463,20 @@ function preprocessRasterPayload() {
   // it matches how the CLI harnesses load images.
   rasterContext.fillStyle = "#ffffff";
   rasterContext.fillRect(0, 0, width, height);
-  rasterContext.drawImage(state.overlayImage, 0, 0);
+  // Use high-quality downsampling when shrinking.
+  rasterContext.imageSmoothingEnabled = true;
+  rasterContext.imageSmoothingQuality = "high";
+  rasterContext.drawImage(state.overlayImage, 0, 0, width, height);
+  if (downsampled) {
+    // Flag in the UI that the raster was downsampled.
+    const note = document.getElementById("preprocess-downsample-note");
+    if (note) {
+      note.textContent =
+        "Raster downsampled to " + width + "x" + height +
+        " (from " + sourceWidth + "x" + sourceHeight + "); topology may differ from full resolution.";
+      note.style.display = "block";
+    }
+  }
   const rgba = rasterContext.getImageData(0, 0, width, height).data;
   const rgb = new Uint8Array(width * height * 3);
   for (let pixel = 0; pixel < width * height; pixel += 1) {
