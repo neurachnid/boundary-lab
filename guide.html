@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Boundary Lab usage guide</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="guide-page">
+    <main class="guide-document">
+      <a class="guide-back" href="/">← Boundary Lab</a>
+      <p class="eyebrow">VRBM → SHARED CUBICS → YANG</p>
+      <h1>Boundary Lab usage guide</h1>
+      <p class="guide-lead">Boundary Lab is a local diagnostic surface for the native C++ pipeline. The browser prepares inputs and draws results; the discrete merger, fitter, optimizer, and filled-region reference renderer all run through the public C ABI.</p>
+
+      <section>
+        <h2>Recommended raster workflow</h2>
+        <ol>
+          <li>Open <strong>Raster image</strong>, choose one local image, and stay on <strong>Source</strong> to verify dimensions.</li>
+          <li>Choose a requested region count, then run <strong>Discrete VBRM</strong> on the complete source raster.</li>
+          <li>Inspect <strong>Flat regions</strong> first. It deliberately contains no borders. If a feature is absent here, curve fitting or Yang optimization cannot restore its topology.</li>
+          <li>Use <strong>Boundaries</strong> to inspect the label interfaces and <strong>Region graph</strong> to find fragmentation or unexpected adjacency.</li>
+          <li>Run <strong>Shared boundary fit</strong>. Inspect chain/cubic count and recovery status. A planar-guide recovery is a compact fit that retains RGB targets; it is different from exact-grid fallback.</li>
+          <li>Compare <strong>Initial curves</strong> against target samples, then optimize. The default staged run applies the fast boundary/prior pass followed by sparse filled-RGB geometry and region-color refinement.</li>
+          <li>Review <strong>Final SVG</strong> for vector quality and download that output. Use <strong>Optimized curves</strong> for geometry diagnostics, and <strong>Initial fill</strong>/<strong>Final fill</strong> for numeric raster comparisons. Those sampled fills are not the SVG preview.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Reading the controls</h2>
+        <p>Every parameter has a <strong>?</strong> button. Help explains its effect, relevant tradeoffs, constraints, and which stage to rerun. Controls with conditional or unavailable behavior say so. Press the same button to close it. Opening another tip closes the current one.</p>
+        <p>Advanced controls are intentionally collapsed. Start with region count, RMS allowance, boundary max step, and raster sweeps/samples. Open an advanced group when a report points to a specific limit, topology retry, convergence, or performance issue.</p>
+        <p><strong>Defaults</strong> (Pipeline header) restores every optimizer, discrete, fit, filled-RGB refinement, and score control from the native C defaults plus the lab UI defaults. Toolbar <strong>Reset</strong> only restores the current geometry, not parameters.</p>
+        <p><strong>Live rebuild</strong> (toolbar) re-runs the earliest affected pipeline stage 500&nbsp;ms after each settled parameter or handle edit, then replays later stages that already had results—including filled-RGB refinement when enabled. Leave it off for large images or expensive sample counts.</p>
+        <p><strong>Evidence weight</strong> and <strong>Targets / cubic</strong> sit under Boundary optimizer, but their data is prepared during fitting. After changing either, run <strong>Fit curves → Optimize</strong>. Initial curve geometry will be unchanged. Contrast floor stays with subpixel evidence because it affects both localization and optimizer target weights.</p>
+        <p>In curve previews, <strong>Label grid</strong> is the exact connected topology from the merged raster. <strong>Evidence path</strong> alternates shared refined vertices with every raw RGB edge observation, so it preserves source adjacency; it is diagnostic and is not yet optimizer quadrature. <strong>Target dots</strong> are the bounded optimizer observations and are not a path. <strong>Assignments</strong> draws each visible dot to its published point on the initializer; red dots/spokes flag clamped, non-increasing, invalid, or greater-than-one-pixel assignments. The diagnostics below the overlays report the complete fitted set even when drawing is capped.</p>
+        <p><strong>Shared settings</strong> holds Threads and Preserve topology for fitting and both optimizers. Flatness and cell size affect only the two optimizers. Raster inputs need a refit when Preserve topology changes; Live rebuild now starts there.</p>
+        <p><strong>Saliency weight</strong> and <strong>Topology weight</strong> are disabled: the browser does not supply the boundary-protection maps they require. They do not preserve image detail in this lab.</p>
+      </section>
+
+      <section>
+        <h2>Normalization and units</h2>
+        <p>Geometry always stays in source-pixel coordinates. <strong>Off</strong>, the tuned default, accumulates raw boundary data and raw APT/HPT/LPT priors. <strong>Yang</strong> divides only data by one fixed initial <em>l</em><sub>0</sub> for the complete shared network and leaves the priors raw. <strong>Scale-balanced</strong> restores the earlier per-chain data/length and segment/handle balancing.</p>
+        <p>Changing normalization changes the data/prior ratio. Retune Angle, Handle, and Length instead of carrying the same numbers across modes. The paper's weights were calibrated for its full raster objective; the lab defaults are calibrated for raw boundary-local evidence.</p>
+        <p>Discrete VBRM always receives the complete natural-size raster. The displayed solver scale is <code>max(1, sqrt(W×H / 512²))</code> source pixels per reference pixel and is shared by fitting, boundary optimization, and raster optimization. Native code converts fit error, support windows, robust delta, max step, handle epsilon, topology tolerances, active margin, and dimensioned prior coefficients; it does not resize the raster or the curves. The RGB localization clamp remains at most ±0.5 actual source pixel.</p>
+        <p>This area-equivalent scale makes uniform resizes comparable. It cannot infer physical object scale across unrelated crops; use known acquisition/export scale in a production caller when available. The report displays the exact value used.</p>
+      </section>
+
+      <section>
+        <h2>Quality triage</h2>
+        <table>
+          <thead><tr><th>Symptom</th><th>Inspect first</th><th>Likely action</th></tr></thead>
+          <tbody>
+            <tr><td>Missing hole, stroke, or island</td><td>Flat regions</td><td>Increase target regions or reconsider merge color space/criterion; discrete preprocessing already uses every source pixel.</td></tr>
+            <tr><td>Too many tiny curves</td><td>Boundaries and fit report</td><td>Inspect fragmentation and grid fallback. Try RMS allowance at fixed labels; do not raise cubic limits blindly. Tangent window is a fallback estimate.</td></tr>
+            <tr><td>Planar-guide recovery</td><td>Cubic count and retained targets</td><td>This is expected on dense photos; continue if the result is compact and no grid fallback is reported.</td></tr>
+            <tr><td>Exact-grid fallback</td><td>Topology refits and cubic count</td><td>Inspect the crossing spans and subpixel motion. More refits do not tighten the RMS threshold; changing Pixel error alone may not help.</td></tr>
+            <tr><td>Optimizer returns unchanged</td><td>Status and topology retries</td><td>Reduce max step or allow more topology retries.</td></tr>
+            <tr><td>Yang mode shrinks or drifts badly</td><td>Normalization and prior weights in both passes</td><td>Retune priors for data/<em>l</em><sub>0</sub>, or return to the tuned Off defaults.</td></tr>
+            <tr><td>Rounded real corners</td><td>Initial curves and Angle weight</td><td>Lower corner-angle threshold or lower Angle weight.</td></tr>
+            <tr><td>Boundary RMSE improves but image worsens</td><td>Final SVG and raster scores at fixed labels</td><td>Inspect lost detail and overly strong priors. Source PSNR includes merging losses, so it is not a clean cross-budget vector-quality score.</td></tr>
+            <tr><td>Raster refinement barely changes the image</td><td>Active error and max control step</td><td>Increase raster sweeps or max step cautiously; review Final SVG as well as the fixed-label raster score.</td></tr>
+            <tr><td>Good curves but gray or haloed fill</td><td>Optimize region colors and full RGB score</td><td>Enable the sparse color solve; lower excessive color regularization before increasing PCG iterations.</td></tr>
+            <tr><td>Slow high-resolution run</td><td>Seed regions, boundary length, cubics, targets, active pixels</td><td>Supply simplified dense labels when available, then reduce downstream fit/sample complexity; never downsample before discrete topology is established.</td></tr>
+          </tbody>
+        </table>
+        <p>Use the Google Ads crop at <strong>16 regions only</strong> for ongoing comparisons. Better merging of small logos into their original shapes is a separate future task. For heavily merged photos, source PSNR mixes segmentation loss with fitting error: hold the label graph fixed when comparing fitting or optimizer changes, and use the final SVG for visual review.</p>
+      </section>
+
+      <section>
+        <h2>What the stages guarantee</h2>
+        <p>The label map is authoritative topology. RGB subpixel evidence may move an existing interface but never add or delete one. Every shared interface is fitted once, so neighboring regions cannot receive independently drifting outlines. The initializer follows the active-contour distinction between a source contour and its Bézier approximation: it first tries RGB-refined guides, then switches only the guide to the planar label contour if necessary while keeping RGB optimization targets. With topology preservation enabled, Yang returns the last planar geometry and reports every rejected retry.</p>
+        <p>The filled reference renderer traverses the region pair on every curve crossing and rejects a network that cannot reproduce the supplied label topology. <strong>sRGB</strong> scoring matches Yang's image-space RGB formulation and the existing logo studies; <strong>Linear RGB</strong> is a separate physical-coverage diagnostic. Samples per axis trades quadratic residual cost for more accurate box coverage.</p>
+        <p>The sparse raster stage moves geometry with an analytic pixel-box coverage derivative, overlapping five-control/two-cubic systems, and joint APT/HPT/LPT acceptance. It alternates two exact-coverage sparse least-squares updates of Yang's region colors. Additive scheduling is the fast default; Ordered colors refreshes the residual and derivative between two or three non-conflicting batches as a bounded-cost approximation to Yang's multiplicative traversal. The remaining paper differences are the fixed-sample box renderer instead of hierarchical Haar coefficients and no literal rerender after every individual block.</p>
+      </section>
+    </main>
+  </body>
+</html>

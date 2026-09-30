@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Bezopt Boundary Lab</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">B<span>2</span></div>
+        <div><p class="eyebrow">VRBM → YANG</p><h1>Boundary Lab</h1></div>
+      </div>
+      <div class="header-actions">
+        <a class="guide-link" href="/guide.html" target="_blank" rel="noreferrer">Usage guide</a>
+        <div class="native-state" id="native-state" data-state="loading">
+          <span class="state-dot" aria-hidden="true"></span><span id="native-state-text">Connecting to native core</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="workbench" aria-label="Bezier boundary workbench">
+        <div class="workbench-toolbar">
+          <div class="input-tabs" role="tablist" aria-label="Input type">
+            <button id="mode-fixture" class="input-tab active" type="button" role="tab" aria-selected="true" data-input-mode="fixture">Test case</button>
+            <button id="mode-raster" class="input-tab" type="button" role="tab" aria-selected="false" data-input-mode="raster">Raster image</button>
+          </div>
+          <div id="fixture-toolbar" class="mode-toolbar">
+            <label class="preset-field" for="preset-select"><span>Case</span><select id="preset-select">
+              <option value="wave">Offset wave</option><option value="junction">Shared junction</option><option value="ring">Closed ring</option>
+              <option value="crossing">Crossing rejection</option><option value="overlap">Overlap rejection</option>
+              <option value="reversal">Cubic reversal</option><option value="batch">256-chain batch</option>
+            </select></label>
+            <p id="preset-description" class="preset-description"></p>
+          </div>
+          <div id="raster-toolbar" class="mode-toolbar" hidden>
+            <div class="raster-identity"><strong id="raster-name">No raster loaded</strong><small id="raster-dimensions">Choose a local PNG, JPEG, WebP, or SVG.</small></div>
+            <button class="button secondary" id="overlay-button" type="button">Choose image</button>
+            <button class="button ghost" id="remove-overlay-button" type="button" disabled>Remove</button>
+            <label id="vector-size-field" class="raster-render-size" hidden><span>Render at <em>longest edge px</em></span><input id="vector-render-size" type="number" min="16" max="4096" step="16" value="512"></label>
+            <input id="overlay-file" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg">
+          </div>
+          <div class="toolbar-actions">
+            <label class="live-rebuild-toggle" title="Rebuild pipeline stages 500ms after each control change">
+              <input id="live-rebuild" type="checkbox">
+              <span>Live rebuild</span>
+            </label>
+            <button class="button ghost" id="reset-button" type="button">Reset</button>
+            <button class="button secondary" id="fit-button" type="button">Fit view</button>
+            <button class="button primary" id="run-button" type="button"><span class="run-icon" aria-hidden="true">▶</span><span id="run-button-label">Optimize</span></button>
+          </div>
+        </div>
+
+        <div class="preview-toolbar" aria-label="Preview stages">
+          <div id="fixture-preview-tabs" class="preview-tabs" role="tablist" aria-label="Fixture preview">
+            <button class="preview-tab active" type="button" role="tab" aria-selected="true" data-preview="fixture">Fixture</button>
+          </div>
+          <div id="raster-preview-tabs" class="preview-tabs" role="tablist" aria-label="Raster pipeline preview" hidden>
+            <button class="preview-tab active" type="button" role="tab" data-preview="source">Source</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="regions" disabled>Flat regions</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="boundaries" disabled>Boundaries</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="rag" disabled>Region graph</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="initial" disabled>Initial curves</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="initial-fill" disabled>Initial fill</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="optimized" disabled>Optimized curves</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="optimized-fill" disabled>Final fill</button>
+            <button class="preview-tab" type="button" role="tab" data-preview="flat-svg" disabled>Final SVG</button>
+          </div>
+          <span class="preview-status" id="preview-status">Synthetic optimizer fixture</span>
+        </div>
+
+        <div class="canvas-frame" id="canvas-frame">
+          <canvas id="boundary-canvas" aria-label="Interactive Bezier boundary visualization">Your browser does not support Canvas.</canvas>
+          <div class="canvas-empty" id="canvas-empty" hidden><strong>No raster loaded</strong><span>Choose an image, then run the discrete VRBM stage.</span></div>
+          <div class="canvas-legend" id="canvas-legend" aria-label="Plot legend">
+            <span data-legend="label-boundary"><i class="legend-label-boundary"></i> Label grid</span><span data-legend="evidence"><i class="legend-evidence"></i> Evidence path</span><span data-legend="target"><i class="legend-target"></i> Target dots</span><span data-legend="initial"><i class="legend-initial"></i> Initial</span>
+            <span data-legend="result"><i class="legend-result"></i> Optimized</span><span data-legend="discrete"><i class="legend-discrete"></i> VBRM</span>
+          </div>
+          <div class="canvas-help" id="canvas-help">Drag control points · wheel to zoom · drag empty space to pan</div>
+        </div>
+
+        <div class="metrics-grid" aria-live="polite">
+          <article class="metric-card status-card"><span class="metric-label">Status</span><strong id="metric-status">Ready</strong><small id="metric-status-detail">Choose a case and run the native optimizer.</small></article>
+          <article class="metric-card"><span class="metric-label">Native time</span><strong id="metric-time">—</strong><small id="metric-round-trip">Round trip —</small></article>
+          <article class="metric-card"><span class="metric-label">Normal RMSE</span><strong id="metric-rmse">—</strong><small id="metric-rmse-delta">Before → after</small></article>
+          <article class="metric-card"><span class="metric-label">Energy</span><strong id="metric-energy">—</strong><small id="metric-energy-delta">Before → after</small></article>
+          <article class="metric-card"><span class="metric-label">Filled PSNR</span><strong id="metric-raster">—</strong><small id="metric-raster-delta">Render the reference fills</small></article>
+          <article class="metric-card"><span class="metric-label">Workload</span><strong id="metric-size">—</strong><small id="metric-evaluations">No evaluations yet</small></article>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Pipeline controls">
+        <div class="inspector-heading">
+          <div><p class="eyebrow">CONTROL SURFACE</p><h2>Pipeline</h2></div>
+          <div class="inspector-heading-actions">
+            <button class="button ghost" id="defaults-button" type="button" title="Restore every pipeline parameter to its native/lab default">Defaults</button>
+            <span class="shortcut">⌘ ↵</span>
+          </div>
+        </div>
+        <div id="raster-controls" hidden>
+          <details class="control-section data-section" open>
+            <summary><span>1 · Discrete VBRM</span><small>Raster → flat regions + RAG</small></summary>
+            <div class="section-body">
+              <p>Merge the full source raster to the requested region budget. Merging can remove small shapes and holes; the resulting label graph defines the topology used by later stages.</p>
+              <div class="field-grid preprocess-grid">
+                <label><span>Target regions</span><input id="preprocess-target" type="number" min="1" max="1000000" step="1" value="16"></label>
+                <label><span>Criterion</span><select id="preprocess-criterion"><option value="area" selected>Area</option><option value="bg">Beaulieu–Goldberg</option><option value="ms">Mumford–Shah</option><option value="scale">Scale</option></select></label>
+                <label><span>Working color</span><select id="preprocess-color-space"><option value="rgb">sRGB</option><option value="linear">Linear RGB</option><option value="lab">CIE Lab</option><option value="oklab" selected>OKLab</option></select></label>
+                <label><span>Initializer</span><select id="preprocess-seed"><option value="components">Connected colors</option><option value="pixels">One region / pixel</option></select></label>
+                <label><span>Dual phases</span><input id="preprocess-iterations" type="number" min="1" max="64" step="1" value="1"></label>
+                <label><span>Area exponent</span><input id="preprocess-area-exponent" type="number" min="0.01" max="8" step="0.05" value="1"></label>
+                <label><span>Smallness scale</span><input id="preprocess-smallness" type="number" min="0" max="1000000" step="1" value="0"></label>
+                <label><span>Raster bias</span><input id="preprocess-raster-bias" type="number" min="0" max="8" step="0.05" value="0"></label>
+              </div>
+              <details class="advanced-controls"><summary>Unavailable in this lab</summary><p class="control-note">These weights require boundary-protection maps, which the browser input does not supply. They have no effect here.</p><div class="field-grid">
+                <label><span>Saliency weight</span><input id="preprocess-saliency" disabled type="number" min="0" max="1000000" step="0.05" value="0"></label>
+                <label><span>Topology weight</span><input id="preprocess-topology" disabled type="number" min="0" max="1000000" step="0.05" value="0"></label>
+              </div></details>
+              <div class="data-actions"><button class="button primary" id="preprocess-button" type="button" disabled>Run discrete</button></div>
+              <div class="preprocess-summary" id="preprocess-summary" data-state="idle">Load a raster to test native discrete preprocessing.</div>
+            </div>
+          </details>
+
+          <details id="fit-controls" class="control-section data-section" open>
+            <summary><span>2 · Shared boundary fit</span><small>Choose cubics, corners, and initial geometry</small></summary>
+            <div class="section-body">
+              <p>Fit each shared interface once. This stage chooses the curve count and corners; the optimizers only move the resulting controls.</p>
+              <h3>Curve acceptance</h3>
+              <div class="field-grid">
+                <label><span>RMS allowance <em>sigmas</em></span><input id="fit-residual-sigmas" type="number" min="0" max="8" step="0.25" value="1.25"></label>
+                <label><span>Pixel error <em>reference px</em></span><input id="fit-error" type="number" min="0.05" max="8" step="0.05" value="0.65"></label>
+                <label><span>Reparameterize</span><input id="fit-reparameterization" type="number" min="0" max="16" step="1" value="4"></label>
+                <label><span>Guide smoothing</span><input id="fit-guide-smoothing" type="number" min="0" max="1" step="0.05" value="1"></label>
+              </div>
+              <p>RMS allowance is the main fit budget. Pixel error sets the maximum-error budget only at RMS = 0; otherwise it still gates reparameterization.</p>
+              <details class="advanced-controls"><summary>Corners and tangent estimates</summary><div class="field-grid">
+                <label><span>Corner angle <em>deg</em></span><input id="fit-corner-angle" type="number" min="5" max="175" step="5" value="75"></label>
+                <label><span>Corner window <em>reference px</em></span><input id="fit-corner-window" type="number" min="1" max="64" step="1" value="2"></label>
+                <label><span>Corner run <em>reference px</em></span><input id="fit-corner-run" type="number" min="0" max="64" step="1" value="3"></label>
+                <label><span>Corner octaves</span><input id="fit-corner-octaves" type="number" min="0" max="8" step="1" value="3"></label>
+                <label><span>Corner turn growth</span><input id="fit-corner-growth" type="number" min="1" max="8" step="0.1" value="1.5"></label>
+                              </div></details>
+              <h3 class="subheading">Subpixel evidence</h3>
+              <label class="toggle-row"><span><strong>RGB subpixel evidence</strong><small>Move existing interfaces only</small></span><input id="fit-subpixel" type="checkbox" checked></label>
+              <details class="advanced-controls"><summary>Subpixel bounds and contrast</summary><div class="field-grid">
+                <label><span>Subpixel bound <em>px</em></span><input id="fit-subpixel-bound" type="number" min="0.01" max="0.5" step="0.01" value="0.5"></label>
+                <label><span>Grid anchor</span><input id="fit-subpixel-anchor" type="number" min="0" max="16" step="0.05" value="0.1"></label>
+                <label><span>Contrast floor</span><input id="fit-contrast-floor" type="number" min="0.00000001" max="10" step="any" value="0.0001"></label>
+              </div></details>
+              <details class="advanced-controls"><summary>Topology recovery and safety limits</summary><div class="field-grid">
+                <label><span>Topology refits</span><input id="fit-topology-retries" type="number" min="0" max="12" step="1" value="3"></label>
+                <label><span>Cubics / chain</span><input id="fit-max-cubics-chain" type="number" min="1" max="1000000" step="1" value="4096"></label>
+                <label><span>Total cubics</span><input id="fit-max-total-cubics" type="number" min="1" max="20000000" step="1000" value="2000000"></label>
+              </div></details>
+              <div class="data-actions"><button class="button primary" id="fit-curves-button" type="button" disabled>Fit curves</button></div>
+            </div>
+          </details>
+        </div>
+
+        <details id="boundary-optimizer-controls" class="control-section" open>
+          <summary><span>3 · Boundary optimizer (Yang)</span><small>Fit weighted boundary targets</small></summary>
+          <div class="section-body">
+            <div id="yang-target-controls" class="target-controls" hidden>
+              <h3>Boundary targets · prepared during fitting</h3>
+              <div class="field-grid">
+                                <label><span>Targets / cubic</span><input id="fit-samples" type="number" min="1" max="256" step="1" value="24"></label>
+              </div>
+              <p>These change the optimizer’s input, not the initial curves. After editing, run <strong>Fit curves → Optimize</strong>, or use Live rebuild.</p>
+            </div>
+            <h3>Schedule</h3>
+            <div class="field-grid">
+              <label><span>Sweeps</span><input id="max-sweeps" type="number" min="1" max="64" step="1" value="2"></label>
+              <label><span>Local iterations</span><input id="local-iterations" type="number" min="1" max="64" step="1" value="4"></label>
+              <label><span>Max step <em>reference px</em></span><input id="max-step" type="number" min="0.001" max="100" step="0.05" value="0.5"></label>
+            </div>
+            <label class="wide-field"><span>Robust delta <em>reference px</em></span><input id="robust-delta" type="number" min="0.01" max="100" step="0.05" value="0.25"></label>
+            <h3 class="subheading">Objective weights</h3>
+            <label class="wide-field"><span>Normalization</span><select id="normalization"><option value="none" selected>Off · raw objective</option><option value="yang">Yang · global l₀ data</option><option value="scale">Scale-balanced · legacy</option></select></label>
+            <div class="field-grid weight-grid">
+              <label><span>Data</span><input id="data-weight" type="number" min="0" max="10" step="0.05" value="1"></label>
+              <label><span>Tangent</span><input id="tangent-weight" type="number" min="0" max="10" step="0.001" value="0.002"></label>
+              <label><span>Angle</span><input id="angle-weight" type="number" min="0" max="10" step="0.001" value="0.002"></label>
+              <label><span>Handle</span><input id="handle-weight" type="number" min="0" max="10" step="0.001" value="0.001"></label>
+              <label><span>Length</span><input id="length-weight" type="number" min="0" max="10" step="0.001" value="0.005"></label>
+            </div>
+            <h3 class="subheading">Sample correspondence</h3>
+            <label class="toggle-row"><span><strong>Reproject samples</strong><small>Refresh closest curve parameters</small></span><input id="reproject-samples" type="checkbox" checked></label>
+            <details class="advanced-controls"><summary>Advanced solver controls</summary><div class="field-grid">
+              <label><span>L-BFGS history</span><input id="lbfgs-history" type="number" min="1" max="8" step="1" value="5"></label>
+              <label><span>Coarse stride</span><input id="coarse-stride" type="number" min="1" max="64" step="1" value="1"></label>
+              <label><span>Line-search steps</span><input id="line-search-steps" type="number" min="1" max="128" step="1" value="12"></label>
+              <label><span>Projection iterations</span><input id="projection-iterations" type="number" min="0" max="64" step="1" value="2"></label>
+              <label><span>Gradient tolerance</span><input id="gradient-tolerance" type="number" min="0" step="0.0000001" value="0.0000001"></label>
+              <label><span>Relative tolerance</span><input id="relative-tolerance" type="number" min="0" step="0.0000001" value="0.0000001"></label>
+              <label><span>Topology retries</span><input id="optimizer-topology-retries" type="number" min="0" max="32" step="1" value="8"></label>
+              <label><span>Angle epsilon <em>rad</em></span><input id="angle-epsilon" type="number" min="0.000000001" max="1" step="0.0001" value="0.001"></label>
+              <label><span>Handle epsilon <em>reference px</em></span><input id="handle-epsilon" type="number" min="0.000000001" max="100" step="0.0001" value="0.001"></label>
+            </div></details>
+          </div>
+        </details>
+
+        <details id="raster-refinement-controls" class="control-section data-section" open hidden>
+          <summary><span>4 · Filled-RGB optimizer</span><small>Refine curves and optional region colors</small></summary>
+          <div class="section-body">
+            <p>Runs after the boundary optimizer when enabled. Adjusts curves against source pixels, with angle, handle, and length penalties and an optional region-color solve.</p>
+            <label class="toggle-row"><span><strong>Run filled-RGB refinement</strong><small>Coupled raster data + curve priors + optional color solve</small></span><input id="raster-refine-enabled" type="checkbox" checked></label>
+            <label class="toggle-row"><span><strong>Optimize region colors</strong><small>Sparse Yang C solve before and after geometry</small></span><input id="raster-refine-colors" type="checkbox" checked></label>
+            <div class="field-grid">
+              <label><span>Raster sweeps</span><input id="raster-refine-sweeps" type="number" min="1" max="64" step="1" value="12"></label>
+              <label><span>Samples / axis</span><input id="raster-refine-samples" type="number" min="1" max="32" step="1" value="8"></label>
+              <label><span>Max step <em>reference px</em></span><input id="raster-refine-max-step" type="number" min="0.001" max="8" step="0.05" value="0.2"></label>
+              <label><span>Step scale</span><input id="raster-refine-step-scale" type="number" min="0.001" max="8" step="0.05" value="0.8"></label>
+              <label><span>Active margin <em>reference px</em></span><input id="raster-refine-active-margin" type="number" min="0" max="64" step="0.25" value="1"></label>
+              <label><span>Band height <em>px</em></span><input id="raster-refine-band-height" type="number" min="1" max="1048576" step="1" value="32"></label>
+            </div>
+            <div class="field-grid">
+              <label><span>Geometry solver</span><select id="raster-refine-geometry-solver"><option value="overlapping_blocks" selected>Overlapping 2-cubic blocks</option><option value="diagonal">Independent coordinates</option></select></label>
+              <label><span>Block schedule</span><select id="raster-refine-block-schedule"><option value="additive" selected>Additive · one global pass</option><option value="colored_multiplicative">Ordered colors · refresh residuals</option></select></label>
+              <label><span>Joint normalization</span><select id="raster-refine-normalization"><option value="none" selected>Off · raw objective</option><option value="yang">Yang · data / l₀</option></select></label>
+            </div>
+            <label class="wide-field"><span>Refinement RGB space</span><select id="raster-refine-color-space"><option value="srgb" selected>sRGB · Yang image values</option><option value="linear">Linear RGB · physical coverage</option></select></label>
+            <details class="advanced-controls"><summary>Advanced raster solver controls</summary><div class="field-grid">
+              <label><span>Hessian damping</span><input id="raster-refine-damping" type="number" min="0.000000001" max="100" step="0.0001" value="0.0001"></label>
+              <label><span>Line-search steps</span><input id="raster-refine-line-search" type="number" min="1" max="128" step="1" value="8"></label>
+              <label><span>Relative tolerance</span><input id="raster-refine-relative-tolerance" type="number" min="0" step="0.000001" value="0.00001"></label>
+              <label><span>Angle weight (APT)</span><input id="raster-refine-angle-weight" type="number" min="0" step="0.0001" value="0.001"></label>
+              <label><span>Handle weight (HPT)</span><input id="raster-refine-handle-weight" type="number" min="0" step="0.0001" value="0.001"></label>
+              <label><span>Length weight (LPT)</span><input id="raster-refine-length-weight" type="number" min="0" step="0.0001" value="0.0005"></label>
+              <label><span>Joint angle epsilon <em>rad</em></span><input id="raster-refine-angle-epsilon" type="number" min="0.000000001" max="1" step="0.0001" value="0.001"></label>
+              <label><span>Joint handle epsilon <em>reference px</em></span><input id="raster-refine-handle-epsilon" type="number" min="0.000000001" max="100" step="0.0001" value="0.001"></label>
+              <label><span>Color PCG iterations</span><input id="raster-refine-color-iterations" type="number" min="1" max="1024" step="1" value="16"></label>
+              <label><span>Color regularization</span><input id="raster-refine-color-regularization" type="number" min="0" step="0.000001" value="0.000001"></label>
+              <label><span>Color tolerance</span><input id="raster-refine-color-tolerance" type="number" min="0.000000000001" step="0.00000001" value="0.00000001"></label>
+            </div></details>
+            <div class="preprocess-summary" id="raster-refinement-summary" data-state="idle">Fit curves to enable direct filled-RGB refinement.</div>
+          </div>
+        </details>
+
+        <details id="export-svg-controls" class="control-section data-section" open hidden>
+          <summary><span>5 · Final SVG</span><small>Browser-rendered vector output</small></summary>
+          <div class="section-body">
+            <p>Review the Final SVG tab, then download the same vector output. Uses optimized region colors when available, otherwise region means. Holes and islands use even-odd winding.</p>
+            <div class="data-actions"><button class="button primary" id="export-svg-button" type="button" disabled>Download SVG</button></div>
+            <div class="preprocess-summary" id="export-svg-summary" data-state="idle">Optimize first, then export a filled SVG in source pixel coordinates.</div>
+          </div>
+        </details>
+
+        <details id="raster-reference-controls" class="control-section data-section" hidden>
+          <summary><span>Diagnostics · Raster score</span><small>Measure fixed-budget runs; not the SVG preview</small></summary>
+          <div class="section-body">
+            <p>Measure source-pixel error at the current region budget. PSNR includes detail lost during merging, so compare fitter/optimizer settings with the same labels and score space. Review Final SVG for vector quality.</p>
+            <div class="field-grid">
+              <label><span>Samples / axis</span><input id="raster-samples" type="number" min="1" max="32" step="1" value="32"></label>
+              <label><span>Band height <em>px</em></span><input id="raster-band-height" type="number" min="1" max="1048576" step="1" value="32"></label>
+            </div>
+            <label class="wide-field"><span>RGB score space</span><select id="raster-color-space"><option value="srgb" selected>sRGB · Yang image values</option><option value="linear">Linear RGB · physical coverage</option></select></label>
+            <label class="toggle-row"><span><strong>Score after optimize</strong><small>Render initial and final fills automatically</small></span><input id="raster-auto-score" type="checkbox" checked></label>
+            <div class="data-actions"><button class="button secondary" id="render-reference-button" type="button" disabled>Render filled stages</button></div>
+            <div class="preprocess-summary" id="raster-reference-summary" data-state="idle">Fit curves to enable filled-region validation.</div>
+          </div>
+        </details>
+
+        <details id="shared-controls" class="control-section">
+          <summary><span>Shared settings</span><small>Topology safety and worker count</small></summary>
+          <div class="section-body">
+            <label class="toggle-row"><span><strong>Preserve topology</strong><small>Fitter and both optimizers</small></span><input id="preserve-topology" type="checkbox" checked></label>
+            <p>Applies to fitting and both optimizers. Keep it on for usable vector output. Changing it requires refitting raster inputs.</p>
+            <div class="field-grid">
+                <label><span>Threads</span><input id="threads" type="number" min="0" max="256" step="1" value="0"></label>
+                <label><span>Topology flatness <em>reference px</em></span><input id="topology-flatness" type="number" min="0.001" max="100" step="0.05" value="0.15"></label>
+                <label><span>Topology cell <em>reference px</em></span><input id="topology-cell-size" type="number" min="0.01" max="10000" step="1" value="16"></label>
+              </div>
+            <p>Threads applies to fitting and both optimizers. Flatness and cell size affect both optimizers’ topology checks; the fitter uses its own grid-based checks.</p>
+          </div>
+        </details>
+
+        <details class="control-section" open>
+          <summary><span>Preview overlays</span><small>Curve-stage diagnostics</small></summary>
+          <div class="section-body">
+            <div class="display-grid">
+              <label><input id="display-label-boundary" type="checkbox" checked><span>Label grid</span></label>
+              <label><input id="display-evidence" type="checkbox" checked><span>Evidence path</span></label>
+              <label><input id="display-targets" type="checkbox"><span>Target dots</span></label>
+              <label><input id="display-assignments" type="checkbox" checked><span>Assignments</span></label>
+              <label><input id="display-normals" type="checkbox"><span>Normals</span></label>
+              <label><input id="display-controls" type="checkbox" checked><span>Controls</span></label>
+              <label><input id="display-initial" type="checkbox"><span>Initial</span></label>
+            </div>
+            <label class="opacity-field" for="overlay-opacity"><span>Raster opacity</span><input id="overlay-opacity" type="range" min="0" max="1" step="0.05" value="0.55"><output id="overlay-opacity-value" for="overlay-opacity">55%</output></label>
+            <div class="preprocess-summary" id="target-diagnostics-summary" data-state="idle" hidden>Run the discrete stage to expose the exact connected label boundary.</div>
+          </div>
+        </details>
+
+        <details id="fixture-controls" class="control-section data-section">
+          <summary><span>Fixture data</span><small>Import or export optimizer JSON</small></summary>
+          <div class="section-body"><p>Import the same chain and target-sample JSON accepted by the native bridge, or export the current run for replay.</p>
+            <div class="data-actions"><button class="button secondary" id="import-button" type="button">Import JSON</button><button class="button secondary" id="export-button" type="button">Export run</button><input id="import-file" class="visually-hidden" type="file" accept="application/json,.json"></div>
+          </div>
+        </details>
+
+        <section class="run-log" aria-labelledby="run-log-title">
+          <div class="run-log-heading"><h3 id="run-log-title">Run log</h3><button id="clear-log-button" type="button">Clear</button></div>
+          <ol id="run-log-list"><li><time>—</time><span>Boundary Lab ready.</span></li></ol>
+        </section>
+      </aside>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

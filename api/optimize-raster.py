@@ -1,0 +1,10 @@
+"""optimize-raster endpoint."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from post_base import PostHandler
+
+
+class handler(PostHandler):
+    method_name = "optimize_raster"
